@@ -22,7 +22,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     }
 
     /// <inheritdoc />
-    public override string Name => "Next Up Merge";
+    public override string Name => "Continue Watching Tweaks";
 
     /// <inheritdoc />
     public override Guid Id => Guid.Parse("747ee9a0-1b72-42aa-8b62-d9135eb53438");

@@ -7,13 +7,9 @@ namespace Jellyfin.Plugin.NextUpMerge.Configuration;
 /// </summary>
 public class PluginConfiguration : BasePluginConfiguration
 {
-    /// <summary>
-    /// Maximum number of Continue Watching items to include.
-    /// </summary>
-    public int ContinueWatchingLimit { get; set; } = 20;
-
-    /// <summary>
-    /// Maximum number of Next Up items to include.
-    /// </summary>
-    public int NextUpLimit { get; set; } = 20;
+    public bool Enabled { get; set; } = true;
+    public bool ApplyToInfuseOnly { get; set; } = false;
+    public bool BlockNextUpEndpoint { get; set; } = false;
+    public bool HideNextUpForSeriesInProgress { get; set; } = true;
+    public bool SortNextUpByEpisodeAddedDate { get; set; } = true;
 }

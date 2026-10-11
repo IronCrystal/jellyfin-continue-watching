@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
 using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Extensions.Json;
+using Jellyfin.Plugin.NextUpMerge.Configuration;
 using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
@@ -28,6 +29,14 @@ public class ResumeInterceptMiddleware
     private static readonly Regex _userItemsResumePattern =
         new(@"^/UserItems/Resume$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    // Older, obsolete route that Infuse also calls on launch.
+    private static readonly Regex _legacyUserResumePattern =
+        new(@"^/Users/(?<userId>[0-9a-fA-F-]{32,36})/Items/Resume$",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex _nextUpPattern =
+        new(@"^/Shows/NextUp$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
     private static readonly ItemFields[] _clientFields =
     {
         ItemFields.PrimaryImageAspectRatio,
@@ -45,41 +54,57 @@ public class ResumeInterceptMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
-        if (!string.Equals(context.Request.Method, "GET", StringComparison.OrdinalIgnoreCase))
+        var pluginConfiguration = Plugin.Instance?.Configuration ?? new PluginConfiguration();
+        var isGetRequest = string.Equals(context.Request.Method, "GET", StringComparison.OrdinalIgnoreCase);
+
+        if (!pluginConfiguration.Enabled || !isGetRequest ||
+            pluginConfiguration.ApplyToInfuseOnly && !IsInfuse(context.Request))
         {
             await _next(context);
             return;
         }
 
         var path = context.Request.Path.Value ?? string.Empty;
-        Guid userId;
 
-        if (_userItemsResumePattern.IsMatch(path) &&
-            Guid.TryParse(context.Request.Query["userId"].ToString(), out userId))
+        if (pluginConfiguration.BlockNextUpEndpoint && _nextUpPattern.IsMatch(path))
         {
-            var mediaTypes = context.Request.Query["mediaTypes"].ToString();
-            if (!string.IsNullOrEmpty(mediaTypes) &&
-                !mediaTypes.Split(',').Any(t => t.Trim().Equals("Video", StringComparison.OrdinalIgnoreCase)))
-            {
-                await _next(context);
-                return;
-            }
+            await WriteEmptyResultAsync(context);
+            return;
         }
-        else
+
+        var userId = Guid.Empty;
+        var legacyMatch = _legacyUserResumePattern.Match(path);
+
+        var isResumeRequest =
+            (_userItemsResumePattern.IsMatch(path)
+             && Guid.TryParse(context.Request.Query["userId"].ToString(), out userId))
+            || (legacyMatch.Success
+                && Guid.TryParse(legacyMatch.Groups["userId"].Value, out userId));
+
+        if (!isResumeRequest)
         {
             await _next(context);
             return;
         }
 
-        await HandleMergedAsync(context, userId);
+        var mediaTypes = context.Request.Query["mediaTypes"].ToString();
+        if (!string.IsNullOrEmpty(mediaTypes) &&
+            !mediaTypes.Split(',').Any(t => t.Trim().Equals("Video", StringComparison.OrdinalIgnoreCase)))
+        {
+            await _next(context);
+            return;
+        }
+
+        await HandleMergedAsync(context, userId, pluginConfiguration);
     }
 
-    private async Task HandleMergedAsync(HttpContext context, Guid userId)
+    private async Task HandleMergedAsync(HttpContext context, Guid userId, PluginConfiguration pluginConfiguration)
     {
         var userManager = context.RequestServices.GetRequiredService<IUserManager>();
-        var libraryMgr  = context.RequestServices.GetRequiredService<ILibraryManager>();
-        var tvMgr       = context.RequestServices.GetRequiredService<ITVSeriesManager>();
-        var dtoService  = context.RequestServices.GetRequiredService<IDtoService>();
+        var libraryManager = context.RequestServices.GetRequiredService<ILibraryManager>();
+        var tvSeriesManager = context.RequestServices.GetRequiredService<ITVSeriesManager>();
+        var dtoService = context.RequestServices.GetRequiredService<IDtoService>();
+        var userDataManager = context.RequestServices.GetRequiredService<IUserDataManager>();
 
         var user = userManager.GetUserById(userId);
         if (user is null)
@@ -88,107 +113,162 @@ public class ResumeInterceptMiddleware
             return;
         }
 
-        var qs = context.Request.Query;
+        var requestQuery = context.Request.Query;
 
-        var startIndex       = TryGetInt(qs, "startIndex");
-        var limit            = TryGetInt(qs, "limit");
-        var fields           = qs.TryGetValue("fields", out var fv)  ? fv.ToString() : null;
-        var enableImages     = TryGetBool(qs, "enableImages");
-        var imgTypeLimit     = TryGetInt(qs, "imageTypeLimit");
-        var imgTypes         = qs.TryGetValue("enableImageTypes", out var itv) ? itv.ToString() : null;
-        var enableUD         = TryGetBool(qs, "enableUserData");
-        var enableTotalCount = TryGetBool(qs, "enableTotalRecordCount") ?? true;
+        var startIndex = TryGetInt(requestQuery, "startIndex");
+        var limit = TryGetInt(requestQuery, "limit");
+        var requestedFields = requestQuery.TryGetValue("fields", out var fieldsValue) ? fieldsValue.ToString() : null;
+        var enableImages = TryGetBool(requestQuery, "enableImages");
+        var imageTypeLimit = TryGetInt(requestQuery, "imageTypeLimit");
+        var enabledImageTypes = requestQuery.TryGetValue("enableImageTypes", out var imageTypesValue)
+            ? imageTypesValue.ToString()
+            : null;
+        var enableUserData = TryGetBool(requestQuery, "enableUserData");
+        var enableTotalRecordCount = TryGetBool(requestQuery, "enableTotalRecordCount") ?? true;
 
-        var config  = Plugin.Instance?.Configuration;
-        int cwLimit = config?.ContinueWatchingLimit ?? 20;
-        int nuLimit = config?.NextUpLimit           ?? 20;
+        // The merged list can never need more than startIndex + limit items from either source.
+        // No limit requested means no cap, which is what Jellyfin's own endpoints do.
+        int? maximumItemsPerSource = limit.HasValue ? (startIndex ?? 0) + limit.Value : null;
 
-        var dtoOptions = BuildDtoOptions(fields, enableImages, imgTypeLimit, imgTypes, enableUD);
+        var dtoOptions = BuildDtoOptions(requestedFields, enableImages, imageTypeLimit, enabledImageTypes,
+            enableUserData);
 
-        // 1. Continue Watching
-        var cwQuery = new InternalItemsQuery(user)
+        // 1. Continue Watching: items the user has partially played (folders excluded)
+        var continueWatchingItems = libraryManager.GetItemList(new InternalItemsQuery(user)
         {
-            OrderBy    = new[] { (ItemSortBy.DatePlayed, SortOrder.Descending) },
+            OrderBy = new[] { (ItemSortBy.DatePlayed, SortOrder.Descending) },
             IsResumable = true,
-            StartIndex = 0,
-            Limit      = cwLimit,
-            Recursive  = true,
+            IsFolder = false,
+            Limit = maximumItemsPerSource,
+            Recursive = true,
             DtoOptions = dtoOptions,
-        };
-        var cwItems = libraryMgr.GetItemsResult(cwQuery).Items.ToList();
+        }).ToList();
 
-        // 2. Next Up
-        var nuQuery = new NextUpQuery
+        // 2. Next Up: optionally skip series that already have an in-progress episode
+        var seriesIdsInContinueWatching = continueWatchingItems
+            .OfType<Episode>()
+            .Select(episode => episode.SeriesId)
+            .Where(seriesId => seriesId != Guid.Empty)
+            .ToHashSet();
+
+        var nextUpItems = tvSeriesManager.GetNextUp(
+                new NextUpQuery { User = user, Limit = maximumItemsPerSource, EnableTotalRecordCount = false },
+                dtoOptions)
+            .Items
+            .Where(item => !pluginConfiguration.HideNextUpForSeriesInProgress
+                           || item is not Episode nextUpCandidate
+                           || !seriesIdsInContinueWatching.Contains(nextUpCandidate.SeriesId))
+            .ToList();
+
+        var nextUpItemIds = nextUpItems.Select(item => item.Id).ToHashSet();
+
+        // 3. Merge. Everything needed for sorting is computed up front so user data is fetched in one batch.
+        // For each Next Up series, find the most recently played episode (one single-row query per series).
+        var lastWatchedEpisodeBySeriesId = new Dictionary<Guid, BaseItem>();
+
+        var nextUpSeriesIds = nextUpItems
+            .OfType<Episode>()
+            .Select(episode => episode.SeriesId)
+            .Where(seriesId => seriesId != Guid.Empty)
+            .Distinct();
+
+        foreach (var seriesId in nextUpSeriesIds)
         {
-            User                   = user,
-            StartIndex             = 0,
-            Limit                  = nuLimit,
-            EnableTotalRecordCount = false,
-        };
-        var nuItems = tvMgr.GetNextUp(nuQuery, dtoOptions).Items.ToList();
-
-        // 3. Merge & deduplicate — CW takes priority; skip NU if series already in CW
-        var seenSeries = new HashSet<Guid>();
-        var seenItems  = new HashSet<Guid>();
-        var merged     = new List<BaseItem>();
-        var nuIds      = new HashSet<Guid>();
-
-        foreach (var item in cwItems)
-        {
-            merged.Add(item);
-            seenItems.Add(item.Id);
-            if (item is Episode ep && ep.SeriesId != Guid.Empty)
-                seenSeries.Add(ep.SeriesId);
-        }
-
-        foreach (var item in nuItems)
-        {
-            if (seenItems.Contains(item.Id)) continue;
-            if (item is Episode ep && seenSeries.Contains(ep.SeriesId)) continue;
-            merged.Add(item);
-            seenItems.Add(item.Id);
-            nuIds.Add(item.Id);
-            if (item is Episode ep2 && ep2.SeriesId != Guid.Empty)
-                seenSeries.Add(ep2.SeriesId);
-        }
-
-        _logger.LogDebug(
-            "[NextUpMerge] {Path}: {CW} continue-watching + {NU} next-up = {Total} total",
-            context.Request.Path, cwItems.Count, nuItems.Count, merged.Count);
-
-        // 4. Page
-        var start = startIndex ?? 0;
-        IEnumerable<BaseItem> paged = merged.Skip(start);
-        if (limit.HasValue)
-            paged = paged.Take(limit.Value);
-
-        // 5. Convert to DTOs and return
-        var dtos = dtoService.GetBaseItemDtos(paged.ToList(), dtoOptions, user);
-
-        // Clear any residual progress on Next Up items so clients don't show a fake progress bar.
-        foreach (var dto in dtos)
-        {
-            if (nuIds.Contains(dto.Id) && dto.UserData is not null)
+            var mostRecentlyPlayedEpisode = libraryManager.GetItemList(new InternalItemsQuery(user)
             {
-                dto.UserData.PlaybackPositionTicks = 0;
-                dto.UserData.PlayedPercentage = null;
+                AncestorIds = new[] { seriesId },
+                IncludeItemTypes = new[] { BaseItemKind.Episode },
+                IsPlayed = true,
+                Recursive = true,
+                OrderBy = new[] { (ItemSortBy.DatePlayed, SortOrder.Descending) },
+                Limit = 1,
+            }).FirstOrDefault();
+
+            if (mostRecentlyPlayedEpisode is not null)
+            {
+                lastWatchedEpisodeBySeriesId[seriesId] = mostRecentlyPlayedEpisode;
             }
         }
 
-        var result = new QueryResult<BaseItemDto>
+        var userDataByItemId = userDataManager.GetUserDataBatch(
+            continueWatchingItems.Concat(lastWatchedEpisodeBySeriesId.Values).ToList(),
+            user);
+
+        DateTime GetLastPlayedDate(BaseItem item)
+            => userDataByItemId.GetValueOrDefault(item.Id)?.LastPlayedDate ?? DateTime.MinValue;
+
+        // In-progress items sort by their own last-played time.
+        // Next Up items sort by the later of: when the series was last watched, or when the episode was added.
+        DateTime GetSortDate(BaseItem item)
         {
-            Items            = dtos,
-            TotalRecordCount = enableTotalCount ? merged.Count : 0,
-            StartIndex       = start,
+            if (!nextUpItemIds.Contains(item.Id))
+            {
+                return GetLastPlayedDate(item);
+            }
+
+            var seriesLastPlayedDate =
+                item is Episode nextUpEpisode
+                && lastWatchedEpisodeBySeriesId.TryGetValue(nextUpEpisode.SeriesId, out var seriesLastWatchedEpisode)
+                    ? GetLastPlayedDate(seriesLastWatchedEpisode)
+                    : DateTime.MinValue;
+
+            return pluginConfiguration.SortNextUpByEpisodeAddedDate && item.DateCreated > seriesLastPlayedDate
+                ? item.DateCreated
+                : seriesLastPlayedDate;
+        }
+
+        var mergedItems = continueWatchingItems
+            .Concat(nextUpItems)
+            .OrderByDescending(GetSortDate)
+            .ToList();
+
+        _logger.LogDebug(
+            "[NextUpMerge] {Path}: {ContinueWatchingCount} continue-watching + {NextUpCount} next-up = {TotalCount} total",
+            context.Request.Path, continueWatchingItems.Count, nextUpItems.Count, mergedItems.Count);
+
+        // 4. Page
+        var firstIndex = startIndex ?? 0;
+        IEnumerable<BaseItem> pagedItems = mergedItems.Skip(firstIndex);
+        if (limit.HasValue)
+        {
+            pagedItems = pagedItems.Take(limit.Value);
+        }
+
+        // 5. Convert to DTOs and return
+        var itemDtos = dtoService.GetBaseItemDtos(pagedItems.ToList(), dtoOptions, user);
+
+        var queryResult = new QueryResult<BaseItemDto>
+        {
+            Items = itemDtos,
+            TotalRecordCount = enableTotalRecordCount ? mergedItems.Count : 0,
+            StartIndex = firstIndex,
         };
 
         var serializerOptions = context.RequestServices
-            .GetService<IOptions<JsonOptions>>()?.Value.JsonSerializerOptions
-            ?? JsonDefaults.CamelCaseOptions;
+                                    .GetService<IOptions<JsonOptions>>()?.Value.JsonSerializerOptions
+                                ?? JsonDefaults.CamelCaseOptions;
 
         context.Response.ContentType = "application/json; charset=utf-8";
-        var json = JsonSerializer.Serialize(result, serializerOptions);
+        var json = JsonSerializer.Serialize(queryResult, serializerOptions);
         await context.Response.WriteAsync(json).ConfigureAwait(false);
+    }
+
+    private static async Task WriteEmptyResultAsync(HttpContext context)
+    {
+        var serializerOptions = context.RequestServices
+                                    .GetService<IOptions<JsonOptions>>()?.Value.JsonSerializerOptions
+                                ?? JsonDefaults.CamelCaseOptions;
+
+        var emptyResult = new QueryResult<BaseItemDto>
+        {
+            Items = Array.Empty<BaseItemDto>(),
+            TotalRecordCount = 0,
+            StartIndex = 0,
+        };
+
+        context.Response.ContentType = "application/json; charset=utf-8";
+        await context.Response.WriteAsync(JsonSerializer.Serialize(emptyResult, serializerOptions))
+            .ConfigureAwait(false);
     }
 
     private static int? TryGetInt(IQueryCollection qs, string key)
@@ -203,7 +283,7 @@ public class ResumeInterceptMiddleware
     {
         var options = new DtoOptions
         {
-            EnableImages   = enableImages   ?? true,
+            EnableImages = enableImages ?? true,
             ImageTypeLimit = imageTypeLimit ?? 1,
             EnableUserData = enableUserData ?? true,
         };
@@ -230,5 +310,19 @@ public class ResumeInterceptMiddleware
         }
 
         return options;
+    }
+
+    private static bool IsInfuse(HttpRequest request)
+    {
+        foreach (var header in new[] { "User-Agent", "Authorization", "X-Emby-Authorization" })
+        {
+            if (request.Headers.TryGetValue(header, out var value)
+                && value.ToString().Contains("Infuse", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

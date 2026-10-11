@@ -31,10 +31,11 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     public override string Description =>
         "Merges Continue Watching and Next Up into a single resumable list for Infuse (and other clients).";
 
-    /// <inheritdoc />
     public IEnumerable<PluginPageInfo> GetPages()
     {
-        // No UI page needed – the plugin works transparently.
-        return Array.Empty<PluginPageInfo>();
-    }
-}
+        yield return new PluginPageInfo
+        {
+            Name                 = Name,
+            EmbeddedResourcePath = $"{GetType().Namespace}.Configuration.configPage.html",
+        };
+    }}

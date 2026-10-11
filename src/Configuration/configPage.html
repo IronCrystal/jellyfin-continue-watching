@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Next Up Merge</title>
+</head>
+<body>
+<div id="NextUpMergeConfigPage" data-role="page" class="page type-interior pluginConfigurationPage"
+     data-require="emby-input,emby-button,emby-checkbox">
+    <div data-role="content">
+        <div class="content-primary">
+            <form id="NextUpMergeConfigForm">
+                <fieldset class="verticalSection">
+                    <legend><h3 class="sectionTitle">General</h3></legend>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="Enabled" type="checkbox" is="emby-checkbox" />
+                            <span>Merge Next Up into Continue Watching</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">
+                            Master switch. When off, the plugin does nothing and Jellyfin responds as normal.
+                        </div>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="ApplyToInfuseOnly" type="checkbox" is="emby-checkbox" />
+                            <span>Only change responses for Infuse</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">
+                            Other clients keep Jellyfin's default behaviour. This applies to every option below.
+                        </div>
+                    </div>
+                </fieldset>
+
+                <fieldset class="verticalSection">
+                    <legend><h3 class="sectionTitle">Continue Watching list</h3></legend>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="HideNextUpForSeriesInProgress" type="checkbox" is="emby-checkbox" />
+                            <span>One entry per series</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">
+                            Don't add a Next Up episode for a series that already has an episode in progress.
+                        </div>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="SortNextUpByEpisodeAddedDate" type="checkbox" is="emby-checkbox" />
+                            <span>Promote recently added episodes</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">
+                            Sorts each Next Up episode by whichever is more recent: when you last watched the series, or when the episode was added to your library.
+                            When off, only the last-watched date is used.
+                        </div>
+                    </div>
+                </fieldset>
+
+                <fieldset class="verticalSection">
+                    <legend><h3 class="sectionTitle">Separate Next Up list</h3></legend>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="BlockNextUpEndpoint" type="checkbox" is="emby-checkbox" />
+                            <span>Hide the separate Next Up list</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">
+                            Returns an empty list for Jellyfin's Next Up request, since those episodes now appear in Continue Watching.
+                            Applies to every client, or only to Infuse if the option above is on.
+                            Clients that use this request to find the next episode to play may stop doing so.
+                        </div>
+                    </div>
+                </fieldset>
+
+                <br />
+                <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                    <span>Save</span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        (function () {
+            var pluginId = '4a3b2c1d-0e0f-4a3b-8c7d-6e5f4a3b2c1d';
+            var page = document.querySelector('#NextUpMergeConfigPage');
+
+            page.addEventListener('pageshow', function () {
+                Dashboard.showLoadingMsg();
+                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                    page.querySelector('#Enabled').checked = config.Enabled;
+                    page.querySelector('#ApplyToInfuseOnly').checked = config.ApplyToInfuseOnly;
+                    page.querySelector('#BlockNextUpEndpoint').checked = config.BlockNextUpEndpoint;
+                    page.querySelector('#HideNextUpForSeriesInProgress').checked = config.HideNextUpForSeriesInProgress;
+                    page.querySelector('#SortNextUpByEpisodeAddedDate').checked = config.SortNextUpByEpisodeAddedDate;
+                    Dashboard.hideLoadingMsg();
+                });
+            });
+
+            page.querySelector('#NextUpMergeConfigForm').addEventListener('submit', function (event) {
+                event.preventDefault();
+                Dashboard.showLoadingMsg();
+                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                    config.Enabled = page.querySelector('#Enabled').checked;
+                    config.ApplyToInfuseOnly = page.querySelector('#ApplyToInfuseOnly').checked;
+                    config.BlockNextUpEndpoint = page.querySelector('#BlockNextUpEndpoint').checked;
+                    config.HideNextUpForSeriesInProgress = page.querySelector('#HideNextUpForSeriesInProgress').checked;
+                    config.SortNextUpByEpisodeAddedDate = page.querySelector('#SortNextUpByEpisodeAddedDate').checked;
+                    ApiClient.updatePluginConfiguration(pluginId, config)
+                        .then(Dashboard.processPluginConfigurationUpdateResult);
+                });
+            });
+        })();
+    </script>
+</div>
+</body>
+</html>

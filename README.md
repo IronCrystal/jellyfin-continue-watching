@@ -2,7 +2,7 @@
 
 A Jellyfin plugin that merges **Continue Watching** and **Next Up** into a single list, along with a number of configuration options.
 
-Built on work from italohdc/Jellyfin-NextUpMerge-Plugin.
+Built on work from [italohdc/Jellyfin-NextUpMerge-Plugin.](https://github.com/italohdc/Jellyfin-NextUpMerge-Plugin).
 
 ## About this plugin
 

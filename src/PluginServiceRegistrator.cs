@@ -1,10 +1,10 @@
-using Jellyfin.Plugin.NextUpMerge.Api;
+using Jellyfin.Plugin.ContinueWatchingTweaks.Api;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Plugins;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Jellyfin.Plugin.NextUpMerge;
+namespace Jellyfin.Plugin.ContinueWatchingTweaks;
 
 /// <summary>
 /// Registers plugin services with Jellyfin's DI container.

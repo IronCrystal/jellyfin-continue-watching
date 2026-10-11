@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
 using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Extensions.Json;
-using Jellyfin.Plugin.NextUpMerge.Configuration;
+using Jellyfin.Plugin.ContinueWatchingTweaks.Configuration;
 using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
@@ -22,7 +22,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Jellyfin.Plugin.NextUpMerge.Api;
+namespace Jellyfin.Plugin.ContinueWatchingTweaks.Api;
 
 public class ResumeInterceptMiddleware
 {
@@ -223,7 +223,7 @@ public class ResumeInterceptMiddleware
             .ToList();
 
         _logger.LogDebug(
-            "[NextUpMerge] {Path}: {ContinueWatchingCount} continue-watching + {NextUpCount} next-up = {TotalCount} total",
+            "[ContinueWatchingTweaks] {Path}: {ContinueWatchingCount} continue-watching + {NextUpCount} next-up = {TotalCount} total",
             context.Request.Path, continueWatchingItems.Count, nextUpItems.Count, mergedItems.Count);
 
         // 4. Page

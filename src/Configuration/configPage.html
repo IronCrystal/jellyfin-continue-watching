@@ -5,11 +5,11 @@
     <title>Next Up Merge</title>
 </head>
 <body>
-<div id="NextUpMergeConfigPage" data-role="page" class="page type-interior pluginConfigurationPage"
+<div id="ContinueWatchingTweaksConfigPage" data-role="page" class="page type-interior pluginConfigurationPage"
      data-require="emby-input,emby-button,emby-checkbox">
     <div data-role="content">
         <div class="content-primary">
-            <form id="NextUpMergeConfigForm">
+            <form id="ContinueWatchingTweaksConfigForm">
                 <fieldset class="verticalSection">
                     <legend><h3 class="sectionTitle">General</h3></legend>
 
@@ -86,7 +86,7 @@
     <script type="text/javascript">
         (function () {
             var pluginId = '4a3b2c1d-0e0f-4a3b-8c7d-6e5f4a3b2c1d';
-            var page = document.querySelector('#NextUpMergeConfigPage');
+            var page = document.querySelector('#ContinueWatchingTweaksConfigPage');
 
             page.addEventListener('pageshow', function () {
                 Dashboard.showLoadingMsg();
@@ -100,7 +100,7 @@
                 });
             });
 
-            page.querySelector('#NextUpMergeConfigForm').addEventListener('submit', function (event) {
+            page.querySelector('#ContinueWatchingTweaksConfigForm').addEventListener('submit', function (event) {
                 event.preventDefault();
                 Dashboard.showLoadingMsg();
                 ApiClient.getPluginConfiguration(pluginId).then(function (config) {

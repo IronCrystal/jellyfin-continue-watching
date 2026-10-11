@@ -22,11 +22,11 @@ jobs:
           dotnet-version: "9.0.x"
 
       - name: Restore
-        run: dotnet restore src/Jellyfin.Plugin.NextUpMerge.csproj
+        run: dotnet restore src/Jellyfin.Plugin.ContinueWatchingTweaks.csproj
 
       - name: Build
         run: |
-          dotnet publish src/Jellyfin.Plugin.NextUpMerge.csproj \
+          dotnet publish src/Jellyfin.Plugin.ContinueWatchingTweaks.csproj \
             --configuration Release \
             --output dist/ \
             --no-restore
@@ -34,10 +34,10 @@ jobs:
       - name: Zip dist
         run: |
           cd dist
-          zip ../Jellyfin.Plugin.NextUpMerge-${{ github.ref_name }}.zip ./*
+          zip ../Jellyfin.Plugin.ContinueWatchingTweaks-${{ github.ref_name }}.zip ./*
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: Jellyfin.Plugin.NextUpMerge-${{ github.ref_name }}.zip
+          files: Jellyfin.Plugin.ContinueWatchingTweaks-${{ github.ref_name }}.zip
           generate_release_notes: true

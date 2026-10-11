@@ -1,7 +1,8 @@
-# Jellyfin NextUpMerge Plugin
+# Jellyfin Continue Watching Tweaks Plugin
 
-A Jellyfin plugin that merges **Continue Watching** and **Next Up** into a single list.
+A Jellyfin plugin that merges **Continue Watching** and **Next Up** into a single list, along with a number of configuration options.
 
+Built on work from italohdc/Jellyfin-NextUpMerge-Plugin.
 
 ## About this plugin
 
@@ -23,25 +24,25 @@ As this new feature is not yet implemented on Jellyfin or Infuse, this plugin is
 
 ### Compatibility
 
-- **Jellyfin 10.11.x**
+- **Jellyfin 12**
 
 ### Option 1: Install from pre-built releases
 
-The compiled plugin files are available on the [releases page](https://github.com/italohdc/Jellyfin-NextUpMerge-Plugin/releases). You need to download the latest release and extract its content into Jellyfin plugins folder.
+The compiled plugin files are available on the [releases page](https://github.com/dyancat/jellyfin-continue-watching-tweaks/releases). You need to download the latest release and extract its content into Jellyfin plugins folder.
 
 In the end, for it to work, there must be a `.dll` file as in:
-`plugins/NextUpMerge_1.0.0.0/Jellyfin.Plugin.NextUpMerge.dll`.
+`plugins/ContinueWatchingTweaks_1.0.0.0/Jellyfin.Plugin.ContinueWatchingTweaks.dll`.
 
 ### Option 2: Build from source
 
 #### Build `.dll` files from source
 
-To build this plugin, you need [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0) installed. The `build.sh` script will compile the plugin files into `dist/` folder.
+To build this plugin, you need [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) installed. The `build.sh` script will compile the plugin files into `dist/` folder.
 
 ```sh
-# Install .NET 9 SDK
+# Install .NET 10 SDK
 ## macOS (Homebrew):
-brew install --cask dotnet-sdk9
+brew install --cask dotnet-sdk10
 
 # Build plugin .dll files
 ./build.sh
@@ -49,11 +50,11 @@ brew install --cask dotnet-sdk9
 
 #### Add plugin to Jellyfin
 
-Currently, this plugin files must be copied mannually to the Jellyfin plugins folder.
+Currently, this plugin files must be copied manually to the Jellyfin plugins folder.
 
-On you Jellyfin config directory, create a new folder `NextUpMerge_1.0.0.0` and copy the content of `dist/` into it.
+On you Jellyfin config directory, create a new folder `ContinueWatchingTweaks_1.0.0.0` and copy the content of `dist/` into it.
 
 In the end, for it to work, there must be a `.dll` file as in:
-`plugins/NextUpMerge_1.0.0.0/Jellyfin.Plugin.NextUpMerge.dll`.
+`plugins/ContinueWatchingTweaks_1.0.0.0/Jellyfin.Plugin.ContinueWatchingTweaks.dll`.
 
 Jellyfin must be restarted after copying the plugin files for it to be loaded.

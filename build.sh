@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# build.sh – Build the NextUpMerge Jellyfin plugin
+# build.sh – Build the ContinueWatchingTweaks Jellyfin plugin
 #
 # Requirements:
 #   • .NET 8 SDK  (https://dotnet.microsoft.com/download)
@@ -10,7 +10,7 @@
 #   ./build.sh
 #
 # Output:
-#   dist/Jellyfin.Plugin.NextUpMerge.dll   ← copy this into Jellyfin's plugins folder
+#   dist/Jellyfin.Plugin.ContinueWatchingTweaks.dll   ← copy this into Jellyfin's plugins folder
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -23,10 +23,10 @@ rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 
 echo "==> Restoring NuGet packages..."
-dotnet restore "$SRC_DIR/Jellyfin.Plugin.NextUpMerge.csproj"
+dotnet restore "$SRC_DIR/Jellyfin.Plugin.ContinueWatchingTweaks.csproj"
 
 echo "==> Building plugin (Release)..."
-dotnet publish "$SRC_DIR/Jellyfin.Plugin.NextUpMerge.csproj" \
+dotnet publish "$SRC_DIR/Jellyfin.Plugin.ContinueWatchingTweaks.csproj" \
     --configuration Release \
     --output "$OUT_DIR" \
     --no-restore
@@ -35,8 +35,8 @@ echo ""
 echo "✅  Build complete!"
 echo ""
 echo "Install the plugin:"
-echo "  1. Copy  dist/Jellyfin.Plugin.NextUpMerge.dll"
-echo "     into   <jellyfin-config>/plugins/NextUpMerge_1.0.0.0/"
+echo "  1. Copy  dist/Jellyfin.Plugin.ContinueWatchingTweaks.dll"
+echo "     into   <jellyfin-config>/plugins/ContinueWatchingTweaks_1.0.0.0/"
 echo "  2. Restart Jellyfin"
 echo "  3. Infuse (and other clients) will now get merged Continue Watching + Next Up"
 echo ""

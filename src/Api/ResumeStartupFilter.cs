@@ -2,7 +2,7 @@ using System;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 
-namespace Jellyfin.Plugin.NextUpMerge.Api;
+namespace Jellyfin.Plugin.ContinueWatchingTweaks.Api;
 
 public class ResumeStartupFilter : IStartupFilter
 {

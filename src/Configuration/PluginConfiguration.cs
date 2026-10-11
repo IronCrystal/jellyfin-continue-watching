@@ -1,10 +1,7 @@
 using MediaBrowser.Model.Plugins;
 
-namespace Jellyfin.Plugin.NextUpMerge.Configuration;
+namespace Jellyfin.Plugin.ContinueWatchingTweaks.Configuration;
 
-/// <summary>
-/// Plugin configuration – kept minimal for now.
-/// </summary>
 public class PluginConfiguration : BasePluginConfiguration
 {
     public bool Enabled { get; set; } = true;

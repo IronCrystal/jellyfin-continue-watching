@@ -1,12 +1,12 @@
 using System;
 using System.Collections.Generic;
-using Jellyfin.Plugin.NextUpMerge.Configuration;
+using Jellyfin.Plugin.ContinueWatchingTweaks.Configuration;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Plugins;
 using MediaBrowser.Model.Plugins;
 using MediaBrowser.Model.Serialization;
 
-namespace Jellyfin.Plugin.NextUpMerge;
+namespace Jellyfin.Plugin.ContinueWatchingTweaks;
 
 /// <summary>
 /// Plugin entry point. Jellyfin discovers this via MEF on startup.

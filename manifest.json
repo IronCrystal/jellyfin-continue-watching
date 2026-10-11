@@ -1,0 +1,11 @@
+[
+    {
+        "guid": "747ee9a0-1b72-42aa-8b62-d9135eb53438",
+        "name": "Continue Watching Tweaks",
+        "description": "Provides options to tweak the Continue Watching list such as merging Next Up into it.",
+        "overview": "Tweak the Continue Watching list",
+        "owner": "dyancat",
+        "category": "General",
+        "versions": []
+    }
+]

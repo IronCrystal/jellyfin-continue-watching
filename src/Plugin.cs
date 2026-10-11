@@ -25,7 +25,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     public override string Name => "Next Up Merge";
 
     /// <inheritdoc />
-    public override Guid Id => Guid.Parse("4a3b2c1d-0e0f-4a3b-8c7d-6e5f4a3b2c1d");
+    public override Guid Id => Guid.Parse("747ee9a0-1b72-42aa-8b62-d9135eb53438");
 
     /// <inheritdoc />
     public override string Description =>

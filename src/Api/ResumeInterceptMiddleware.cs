@@ -160,30 +160,29 @@ public class ResumeInterceptMiddleware
                            || !seriesIdsInContinueWatching.Contains(nextUpCandidate.SeriesId))
             .ToList();
 
-        // 3. For each Next Up series, find the most recently finished episode (one single-row query per series).
+        // 3. Last finished episode per Next Up series, from one batched lookup.
+        var nextUpEpisodes = nextUpItems.OfType<Episode>().ToList();
+
+        var seriesKeys = nextUpEpisodes
+            .Select(episode => episode.SeriesPresentationUniqueKey)
+            .Where(seriesKey => !string.IsNullOrEmpty(seriesKey))
+            .Distinct()
+            .ToList();
+
+        var batchResultBySeriesKey = libraryManager.GetNextUpEpisodesBatch(
+            new InternalItemsQuery(user) { DtoOptions = dtoOptions },
+            seriesKeys,
+            includeSpecials: false,
+            includeWatchedForRewatching: false);
+
         var lastWatchedEpisodeBySeriesId = new Dictionary<Guid, BaseItem>();
 
-        var nextUpSeriesIds = nextUpItems
-            .OfType<Episode>()
-            .Select(episode => episode.SeriesId)
-            .Where(seriesId => seriesId != Guid.Empty)
-            .Distinct();
-
-        foreach (var seriesId in nextUpSeriesIds)
+        foreach (var episodeInSeries in nextUpEpisodes)
         {
-            var mostRecentlyFinishedEpisode = libraryManager.GetItemList(new InternalItemsQuery(user)
+            if (batchResultBySeriesKey.TryGetValue(episodeInSeries.SeriesPresentationUniqueKey, out var batchResult)
+                && batchResult.LastWatched is not null)
             {
-                AncestorIds = new[] { seriesId },
-                IncludeItemTypes = new[] { BaseItemKind.Episode },
-                IsPlayed = true,
-                Recursive = true,
-                OrderBy = new[] { (ItemSortBy.DatePlayed, SortOrder.Descending) },
-                Limit = 1,
-            }).FirstOrDefault();
-
-            if (mostRecentlyFinishedEpisode is not null)
-            {
-                lastWatchedEpisodeBySeriesId[seriesId] = mostRecentlyFinishedEpisode;
+                lastWatchedEpisodeBySeriesId[episodeInSeries.SeriesId] = batchResult.LastWatched;
             }
         }
 
@@ -200,12 +199,24 @@ public class ResumeInterceptMiddleware
         var nextUpItemIds = nextUpItems.Select(item => item.Id).ToHashSet();
 
         // 4. Merge. All dates come from one user data batch.
+        IEnumerable<BaseItem> GetVersions(BaseItem item)
+            => item is Video video ? video.GetAllVersions().Cast<BaseItem>() : new[] { item };
+
         var userDataByItemId = userDataManager.GetUserDataBatch(
-            continueWatchingItems.Concat(lastWatchedEpisodeBySeriesId.Values).ToList(),
+            continueWatchingItems
+                .Concat(lastWatchedEpisodeBySeriesId.Values.SelectMany(GetVersions))
+                .DistinctBy(item => item.Id)
+                .ToList(),
             user);
 
         DateTime GetLastPlayedDate(BaseItem item)
             => userDataByItemId.GetValueOrDefault(item.Id)?.LastPlayedDate ?? DateTime.MinValue;
+
+        DateTime GetSeriesLastPlayedDate(BaseItem lastWatchedEpisode)
+            => GetVersions(lastWatchedEpisode)
+                .Select(GetLastPlayedDate)
+                .DefaultIfEmpty(DateTime.MinValue)
+                .Max();        _logger.LogInformation("[ContinueWatchingTweaks] userDataByItemId done at {Milliseconds} ms", stopwatch.ElapsedMilliseconds);
 
         // In-progress items sort by their own last-played time.
         // Next Up items sort by the later of: when the series' last finished episode was played,
@@ -220,7 +231,7 @@ public class ResumeInterceptMiddleware
             var seriesLastPlayedDate =
                 item is Episode nextUpEpisode
                 && lastWatchedEpisodeBySeriesId.TryGetValue(nextUpEpisode.SeriesId, out var seriesLastWatchedEpisode)
-                    ? GetLastPlayedDate(seriesLastWatchedEpisode)
+                    ? GetSeriesLastPlayedDate(seriesLastWatchedEpisode)
                     : DateTime.MinValue;
 
             return pluginConfiguration.SortNextUpByEpisodeAddedDate && item.DateCreated > seriesLastPlayedDate
@@ -264,13 +275,6 @@ public class ResumeInterceptMiddleware
                 itemDto.UserData.LastPlayedDate = sortDate > DateTime.MinValue ? sortDate : null;
             }
         }
-
-        _logger.LogDebug(
-            "[ContinueWatchingTweaks] {Path} UserAgent={UserAgent} returned {Count} items: {Items}",
-            context.Request.Path,
-            context.Request.Headers.UserAgent.ToString(),
-            itemDtos.Count,
-            string.Join(" | ", itemDtos.Select(dto => $"{dto.SeriesName} {dto.Name}".Trim())));
 
         var queryResult = new QueryResult<BaseItemDto>
         {

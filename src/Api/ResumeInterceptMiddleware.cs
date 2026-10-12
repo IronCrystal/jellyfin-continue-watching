@@ -160,10 +160,7 @@ public class ResumeInterceptMiddleware
                            || !seriesIdsInContinueWatching.Contains(nextUpCandidate.SeriesId))
             .ToList();
 
-        var nextUpItemIds = nextUpItems.Select(item => item.Id).ToHashSet();
-
-        // 3. Merge. Everything needed for sorting is computed up front so user data is fetched in one batch.
-        // For each Next Up series, find the most recently played episode (one single-row query per series).
+        // 3. For each Next Up series, find the most recently finished episode (one single-row query per series).
         var lastWatchedEpisodeBySeriesId = new Dictionary<Guid, BaseItem>();
 
         var nextUpSeriesIds = nextUpItems
@@ -174,7 +171,7 @@ public class ResumeInterceptMiddleware
 
         foreach (var seriesId in nextUpSeriesIds)
         {
-            var mostRecentlyPlayedEpisode = libraryManager.GetItemList(new InternalItemsQuery(user)
+            var mostRecentlyFinishedEpisode = libraryManager.GetItemList(new InternalItemsQuery(user)
             {
                 AncestorIds = new[] { seriesId },
                 IncludeItemTypes = new[] { BaseItemKind.Episode },
@@ -184,12 +181,25 @@ public class ResumeInterceptMiddleware
                 Limit = 1,
             }).FirstOrDefault();
 
-            if (mostRecentlyPlayedEpisode is not null)
+            if (mostRecentlyFinishedEpisode is not null)
             {
-                lastWatchedEpisodeBySeriesId[seriesId] = mostRecentlyPlayedEpisode;
+                lastWatchedEpisodeBySeriesId[seriesId] = mostRecentlyFinishedEpisode;
             }
         }
 
+        // Jellyfin adds a series to Next Up as soon as any of its episodes has a last-played date,
+        // even if it was only opened briefly. Optionally keep only series with a finished episode.
+        if (pluginConfiguration.RequireFinishedEpisodeForNextUp)
+        {
+            nextUpItems = nextUpItems
+                .Where(item => item is not Episode nextUpEpisodeToCheck
+                               || lastWatchedEpisodeBySeriesId.ContainsKey(nextUpEpisodeToCheck.SeriesId))
+                .ToList();
+        }
+
+        var nextUpItemIds = nextUpItems.Select(item => item.Id).ToHashSet();
+
+        // 4. Merge. All dates come from one user data batch.
         var userDataByItemId = userDataManager.GetUserDataBatch(
             continueWatchingItems.Concat(lastWatchedEpisodeBySeriesId.Values).ToList(),
             user);
@@ -198,7 +208,8 @@ public class ResumeInterceptMiddleware
             => userDataByItemId.GetValueOrDefault(item.Id)?.LastPlayedDate ?? DateTime.MinValue;
 
         // In-progress items sort by their own last-played time.
-        // Next Up items sort by the later of: when the series was last watched, or when the episode was added.
+        // Next Up items sort by the later of: when the series' last finished episode was played,
+        // or (optionally) when the episode was added.
         DateTime GetSortDate(BaseItem item)
         {
             if (!nextUpItemIds.Contains(item.Id))
@@ -217,16 +228,22 @@ public class ResumeInterceptMiddleware
                 : seriesLastPlayedDate;
         }
 
+        // Each sort date is computed once and reused for the ordering and the response.
+        var sortDateByItemId = continueWatchingItems
+            .Concat(nextUpItems)
+            .DistinctBy(item => item.Id)
+            .ToDictionary(item => item.Id, item => GetSortDate(item));
+
         var mergedItems = continueWatchingItems
             .Concat(nextUpItems)
-            .OrderByDescending(GetSortDate)
+            .OrderByDescending(item => sortDateByItemId[item.Id])
             .ToList();
 
         _logger.LogDebug(
             "[ContinueWatchingTweaks] {Path}: {ContinueWatchingCount} continue-watching + {NextUpCount} next-up = {TotalCount} total",
             context.Request.Path, continueWatchingItems.Count, nextUpItems.Count, mergedItems.Count);
 
-        // 4. Page
+        // 5. Page
         var firstIndex = startIndex ?? 0;
         IEnumerable<BaseItem> pagedItems = mergedItems.Skip(firstIndex);
         if (limit.HasValue)
@@ -234,8 +251,26 @@ public class ResumeInterceptMiddleware
             pagedItems = pagedItems.Take(limit.Value);
         }
 
-        // 5. Convert to DTOs and return
+        // 6. Convert to DTOs and return
         var itemDtos = dtoService.GetBaseItemDtos(pagedItems.ToList(), dtoOptions, user);
+
+        // A Next Up episode can carry its own recent last-played date from a brief play.
+        // Replace it with the sort date so clients that order by this field agree with the response order.
+        foreach (var itemDto in itemDtos)
+        {
+            if (nextUpItemIds.Contains(itemDto.Id) && itemDto.UserData is not null)
+            {
+                var sortDate = sortDateByItemId[itemDto.Id];
+                itemDto.UserData.LastPlayedDate = sortDate > DateTime.MinValue ? sortDate : null;
+            }
+        }
+
+        _logger.LogDebug(
+            "[ContinueWatchingTweaks] {Path} UserAgent={UserAgent} returned {Count} items: {Items}",
+            context.Request.Path,
+            context.Request.Headers.UserAgent.ToString(),
+            itemDtos.Count,
+            string.Join(" | ", itemDtos.Select(dto => $"{dto.SeriesName} {dto.Name}".Trim())));
 
         var queryResult = new QueryResult<BaseItemDto>
         {

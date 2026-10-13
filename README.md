@@ -26,14 +26,27 @@ As this new feature is not yet implemented on Jellyfin or Infuse, this plugin is
 
 - **Jellyfin 12**
 
-### Option 1: Install from pre-built releases
+### Option 1: Install in Jellyfin admin dashboard
+
+1. Navigate to your Jellyfin admin dashboard
+2. Open the Plugins page
+3. Click "Manage Repositories" then "+ New Repository"
+4. Enter the following:
+  * Name: `Continue Watching`
+  * URL: `https://raw.githubusercontent.com/dyancat/jellyfin-continue-watching-tweaks/refs/heads/main/manifest.json`
+5. Go back to Plugins and filter to "All" or "Available"
+6. Find and install the "Continue Watching Tweaks" plugin
+7. Restart Jellyfin.
+8. It should be configured to work by default, otherwise you can open the plugin settings and configure it as needed.
+
+### Option 2: Install from pre-built releases
 
 The compiled plugin files are available on the [releases page](https://github.com/dyancat/jellyfin-continue-watching-tweaks/releases). You need to download the latest release and extract its content into Jellyfin plugins folder.
 
 In the end, for it to work, there must be a `.dll` file as in:
 `plugins/ContinueWatchingTweaks_1.0.0.0/Jellyfin.Plugin.ContinueWatchingTweaks.dll`.
 
-### Option 2: Build from source
+### Option 3: Build from source
 
 #### Build `.dll` files from source
 
@@ -50,9 +63,7 @@ brew install --cask dotnet-sdk10
 
 #### Add plugin to Jellyfin
 
-Currently, this plugin files must be copied manually to the Jellyfin plugins folder.
-
-On you Jellyfin config directory, create a new folder `ContinueWatchingTweaks_1.0.0.0` and copy the content of `dist/` into it.
+In your Jellyfin config directory, create a new folder `ContinueWatchingTweaks_1.0.0.0` and copy the content of `dist/` into it.
 
 In the end, for it to work, there must be a `.dll` file as in:
 `plugins/ContinueWatchingTweaks_1.0.0.0/Jellyfin.Plugin.ContinueWatchingTweaks.dll`.

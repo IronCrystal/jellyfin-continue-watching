@@ -12,6 +12,7 @@
   <ItemGroup>
     <PackageReference Include="Jellyfin.Controller" Version="12.3.0" />
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.11.0" />
+    <PackageReference Include="NSubstitute" Version="6.2.0" />
     <PackageReference Include="xunit.v3" Version="4.0.2" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>

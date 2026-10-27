@@ -4,6 +4,7 @@ using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
+using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.ContinueWatchingPlus.Caching;
 using Jellyfin.Plugin.ContinueWatchingPlus.Configuration;
 using Jellyfin.Plugin.ContinueWatchingPlus.Merging;
@@ -20,6 +21,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.ContinueWatchingPlus.Api;
 
@@ -31,7 +33,12 @@ public sealed class ContinueWatchingActionFilter : IAsyncActionFilter
 {
     // Values from Jellyfin.Api's InternalClaimTypes and UserRoles, which plugins can't reference.
     private const string UserIdClaimType = "Jellyfin-UserId";
+    private const string ClientClaimType = "Jellyfin-Client";
     private const string AdministratorRole = "Administrator";
+
+    // Apps that run jellyfin-web, whose Next Up request carries the user's own web settings.
+    // Native apps (Android TV, Swiftfin, ...) may send cutoffs of their own and must not overwrite them.
+    private static readonly string[] _webClientNames = { "Jellyfin Web", "Jellyfin Desktop", "Jellyfin for Android" };
 
     private readonly MergedListCache _cache;
     private readonly NextUpPreferenceStore _nextUpPreferences;
@@ -39,6 +46,8 @@ public sealed class ContinueWatchingActionFilter : IAsyncActionFilter
     private readonly ILibraryManager _libraryManager;
     private readonly IDtoService _dtoService;
     private readonly ISessionManager _sessionManager;
+    private readonly ILogger<ContinueWatchingActionFilter> _logger;
+    private readonly Func<PluginConfiguration?> _getConfiguration;
 
     public ContinueWatchingActionFilter(
         MergedListCache cache,
@@ -46,7 +55,21 @@ public sealed class ContinueWatchingActionFilter : IAsyncActionFilter
         IUserManager userManager,
         ILibraryManager libraryManager,
         IDtoService dtoService,
-        ISessionManager sessionManager)
+        ISessionManager sessionManager,
+        ILogger<ContinueWatchingActionFilter> logger)
+        : this(cache, nextUpPreferences, userManager, libraryManager, dtoService, sessionManager, logger, () => Plugin.Instance?.Configuration)
+    {
+    }
+
+    internal ContinueWatchingActionFilter(
+        MergedListCache cache,
+        NextUpPreferenceStore nextUpPreferences,
+        IUserManager userManager,
+        ILibraryManager libraryManager,
+        IDtoService dtoService,
+        ISessionManager sessionManager,
+        ILogger<ContinueWatchingActionFilter> logger,
+        Func<PluginConfiguration?> getConfiguration)
     {
         _cache = cache;
         _nextUpPreferences = nextUpPreferences;
@@ -54,11 +77,13 @@ public sealed class ContinueWatchingActionFilter : IAsyncActionFilter
         _libraryManager = libraryManager;
         _dtoService = dtoService;
         _sessionManager = sessionManager;
+        _logger = logger;
+        _getConfiguration = getConfiguration;
     }
 
     public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
     {
-        var configuration = Plugin.Instance?.Configuration;
+        var configuration = _getConfiguration();
         if (configuration is null
             || !configuration.Enabled
             || context.ActionDescriptor is not ControllerActionDescriptor action
@@ -102,6 +127,14 @@ public sealed class ContinueWatchingActionFilter : IAsyncActionFilter
         return requestedUserId.Value;
     }
 
+    private static bool IsWebClient(ClaimsPrincipal principal)
+    {
+        var client = principal.Claims
+            .FirstOrDefault(claim => claim.Type.Equals(ClientClaimType, StringComparison.OrdinalIgnoreCase))
+            ?.Value;
+        return client is not null && _webClientNames.Contains(client, StringComparer.OrdinalIgnoreCase);
+    }
+
     private static Guid GetAuthenticatedUserId(ClaimsPrincipal principal)
     {
         var value = principal.Claims
@@ -141,6 +174,24 @@ public sealed class ContinueWatchingActionFilter : IAsyncActionFilter
             return true;
         }
 
+        QueryResult<BaseItemDto> result;
+        try
+        {
+            result = await BuildResumeResultAsync(arguments, user).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // A bug or database error here degrades to Jellyfin's own Continue Watching list, not a broken row.
+            _logger.LogError(ex, "[ContinueWatchingPlus] Could not build the merged list for user {UserId}; serving Jellyfin's own list", user.Id);
+            return false;
+        }
+
+        context.Result = new OkObjectResult(result);
+        return true;
+    }
+
+    private async Task<QueryResult<BaseItemDto>> BuildResumeResultAsync(IDictionary<string, object?> arguments, User user)
+    {
         var mergedList = await _cache.GetAsync(user.Id).ConfigureAwait(false);
 
         var includeItemTypes = GetArgument<BaseItemKind[]>(arguments, "includeItemTypes") ?? Array.Empty<BaseItemKind>();
@@ -167,7 +218,8 @@ public sealed class ContinueWatchingActionFilter : IAsyncActionFilter
         var sortDateByNextUpItemId = new Dictionary<Guid, DateTime>();
         foreach (var entry in pageEntries)
         {
-            if (_libraryManager.GetItemById(entry.ItemId) is not { } item)
+            // Re-checks the user's access on every request, not only when the list was built.
+            if (_libraryManager.GetItemById<BaseItem>(entry.ItemId, user) is not { } item)
             {
                 continue;
             }
@@ -193,11 +245,10 @@ public sealed class ContinueWatchingActionFilter : IAsyncActionFilter
         }
 
         var enableTotalRecordCount = GetValue<bool>(arguments, "enableTotalRecordCount") ?? true;
-        context.Result = new OkObjectResult(new QueryResult<BaseItemDto>(
+        return new QueryResult<BaseItemDto>(
             startIndex,
             enableTotalRecordCount ? matchingEntries.Count : 0,
-            itemDtos));
-        return true;
+            itemDtos);
     }
 
     private bool TryHandleNextUp(ActionExecutingContext context, PluginConfiguration configuration)
@@ -211,6 +262,7 @@ public sealed class ContinueWatchingActionFilter : IAsyncActionFilter
         if (GetValue<DateTime>(arguments, "nextUpDateCutoff") is { } nextUpDateCutoff
             && !userId.Equals(Guid.Empty)
             && userId.Equals(GetAuthenticatedUserId(principal))
+            && IsWebClient(principal)
             && _nextUpPreferences.Record(userId, nextUpDateCutoff, GetValue<bool>(arguments, "enableRewatching") ?? false, DateTime.UtcNow))
         {
             _cache.Invalidate(userId, TimeSpan.Zero);

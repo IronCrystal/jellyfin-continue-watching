@@ -18,9 +18,6 @@ public sealed class CacheInvalidationService : IHostedService, IDisposable
     // long enough to fold a burst (marking a whole season played) into one rebuild.
     private static readonly TimeSpan UserChangeRebuildDelay = TimeSpan.FromMilliseconds(500);
 
-    // A library scan adds items in bursts; wait for it to settle before rebuilding everyone.
-    private static readonly TimeSpan LibraryChangeRebuildDelay = TimeSpan.FromSeconds(10);
-
     private static readonly TimeSpan RefreshInterval = TimeSpan.FromMinutes(1);
 
     private readonly MergedListCache _cache;
@@ -108,7 +105,7 @@ public sealed class CacheInvalidationService : IHostedService, IDisposable
             return;
         }
 
-        _cache.InvalidateAll(LibraryChangeRebuildDelay);
+        _cache.MarkLibraryChanged();
     }
 
     private void OnUserUpdated(object? sender, GenericEventArgs<User> e)

@@ -248,4 +248,55 @@ public sealed class MergedListCacheTests : IDisposable
 
         Assert.Equal(0, BuildCount);
     }
+
+    [Fact]
+    public async Task ALibraryChange_KeepsServingTheCurrentListUntilTheBackgroundRebuild()
+    {
+        var original = await _cache.GetAsync(_userId);
+
+        _cache.MarkLibraryChanged();
+        Assert.Same(original, await _cache.GetAsync(_userId));
+
+        _time.Advance(MergedListCache.LibraryRebuildDelay);
+        WaitUntil(() => BuildCount == 2);
+        WaitUntil(() => !ReferenceEquals(original, _cache.GetAsync(_userId).Result));
+        Assert.Equal(2, BuildCount);
+    }
+
+    [Fact]
+    public async Task ANonStopLibraryScan_StillRebuildsEveryInterval()
+    {
+        await _cache.GetAsync(_userId);
+
+        for (var round = 2; round <= 4; round++)
+        {
+            for (var i = 0; i < 10; i++)
+            {
+                _cache.MarkLibraryChanged();
+                _time.Advance(MergedListCache.LibraryRebuildDelay / 10);
+            }
+
+            var expectedBuilds = round;
+            WaitUntil(() => BuildCount == expectedBuilds);
+        }
+    }
+
+    [Fact]
+    public async Task ALibraryChangeDuringARebuild_LeadsToAnotherRebuild()
+    {
+        await _cache.GetAsync(_userId);
+
+        _buildGate.Reset();
+        _cache.MarkLibraryChanged();
+        _time.Advance(MergedListCache.LibraryRebuildDelay);
+        WaitUntil(() => BuildCount == 2);
+
+        _cache.MarkLibraryChanged();
+        _buildGate.Set();
+        _time.Advance(MergedListCache.LibraryRebuildDelay);
+
+        WaitUntil(() => BuildCount == 3);
+        Settle();
+        Assert.Equal(3, BuildCount);
+    }
 }

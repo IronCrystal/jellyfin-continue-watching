@@ -36,13 +36,19 @@ Copy `Jellyfin.Plugin.ContinueWatchingPlus.dll` (from a release zip, or `./build
 | One entry per series | on | No Next Up episode for a show you're partway through another episode of. |
 | Only include series with a finished episode | on | A show you only opened briefly doesn't appear. |
 | Promote recently added episodes | on | A newly added next episode moves its show to the front. |
-| Hide the separate Next Up list | off | Empties the separate Next Up row. Series pages still find the next episode. |
+| Hide the separate Next Up list | off | Empties the separate Next Up row, which the web app then hides. Series pages still find the next episode. |
 | Only change responses for Infuse | off | Other clients get Jellyfin's normal lists. |
 
 Each user's own **Max days in Next Up** and **Enable rewatching in Next Up** are respected. The web app stores these in
-the browser rather than on the server, so the plugin picks them up from the web app's own Next Up request the next
-time that user opens the home page, and remembers them. Users who never use the web app get the defaults on the
-plugin's settings page (365 days, rewatching off, the same as the web app).
+the browser rather than on the server, so the plugin picks them up from the Next Up request the web app makes when
+that user opens the home page, and remembers them. Only apps built on the web app are trusted for this (the browser,
+Jellyfin Desktop, and Jellyfin for Android); native apps such as Android TV can send different values and are ignored.
+If a user has different settings in two of those apps, the one they opened most recently wins. Users who never use
+them get the defaults on the plugin's settings page (365 days, rewatching off, the same as the web app).
+
+> **Keep the Next Up home section turned on.** If a user sets it to *None* under Settings → Home, the web app stops
+> making that request and the plugin can't see their settings. To avoid showing Next Up twice, turn on **Hide the
+> separate Next Up list** instead: the web app hides a Next Up section that comes back empty.
 
 Requests the plugin leaves to Jellyfin: Continue Listening/Reading (`mediaTypes` without Video), library-scoped
 (`parentId`) and search (`searchTerm`) queries.
@@ -60,18 +66,24 @@ The plugin runs inside Jellyfin's own request pipeline, on Jellyfin's own endpoi
 Each user's merged list (item IDs and order only) is kept in memory. Images, fields, and progress bars are filled in
 fresh on every request.
 
-- **Cleared when something changes:** that user's playback starts or stops, an item is marked played or unplayed,
-  videos are added to or removed from the library, the user's account or this plugin's settings change, or the web
-  app reports different Next Up settings.
-- **Rebuilt in the background** right after a change (after 10 s for library scans, which add items in bursts), so the
-  home page usually gets an answer from memory. A request that arrives before the rebuild finishes computes the list
-  itself; it never gets the old one.
+- **Cleared when that user's watching changes:** playback starts or stops, an item is marked played or unplayed, an
+  administrator renames the user or changes their policy (such as library access), this plugin's settings change, or
+  the web app reports different Next Up settings. The list is rebuilt in the background right away, so the home page
+  usually gets an answer from memory. A request that arrives before the rebuild finishes computes the list itself; it
+  never gets the old one.
+- **Refreshed when the library changes:** while videos are being added or removed, the current list keeps being
+  served and is rebuilt in the background every 10 seconds, even during a long scan. A new episode reaches the row
+  within about 10 seconds; a removed item disappears at once, since every request looks items up again (and re-checks
+  the user's access).
 - **Safety net:** lists are rebuilt at least every 5 minutes (configurable) and at midnight UTC, when the Next Up
   date cutoff moves. Users who loaded the row in the last 24 hours are refreshed ahead of time, so they keep getting
   answers from memory.
+- **If building the list fails**, the error is logged and the request gets Jellyfin's own Continue Watching list, so
+  the row still loads.
 
-Trade-off: the first load after a Jellyfin restart computes the list (about as fast as Jellyfin's own Next Up), and
-changes Jellyfin doesn't announce, such as which libraries a user may see, show up within the safety-net interval.
+Trade-offs: the first load after a Jellyfin restart computes the list (about as fast as Jellyfin's own Next Up).
+Changes to a user's own settings, such as which libraries appear in their home screen sections, don't raise an event
+in Jellyfin, so they show up within the safety-net interval.
 
 ## Build
 

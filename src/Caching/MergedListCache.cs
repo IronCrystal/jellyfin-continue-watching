@@ -8,11 +8,16 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.ContinueWatchingPlus.Caching;
 
 /// <summary>
-/// Per-user merged lists. A change bumps the user's generation: lists built before it are never served
-/// again, and a rebuild runs in the background so the next request is usually answered from memory.
+/// Per-user merged lists. A change to a user's watch state bumps their generation: lists built before it
+/// are never served again, and a rebuild runs in the background so the next request is usually answered
+/// from memory. Library changes are softer: the current list keeps being served while it is rebuilt,
+/// since a newly scanned file rarely changes this row.
 /// </summary>
 public sealed class MergedListCache : IDisposable
 {
+    // Library changes are folded into one background rebuild per interval, even during a long scan.
+    internal static readonly TimeSpan LibraryRebuildDelay = TimeSpan.FromSeconds(10);
+
     // Users who loaded the row this recently are kept warm in the background.
     internal static readonly TimeSpan ActiveWindow = TimeSpan.FromHours(24);
 
@@ -29,6 +34,8 @@ public sealed class MergedListCache : IDisposable
     private readonly ConcurrentDictionary<Guid, Slot> _slots = new();
     private readonly SemaphoreSlim _backgroundGate = new(1, 1);
     private readonly CancellationTokenSource _shutdown = new();
+    private long _libraryVersion;
+    private int _libraryRebuildScheduled;
 
     public MergedListCache(Func<Guid, MergedList> build, Func<TimeSpan> timeToLive, TimeProvider timeProvider, ILogger logger)
     {
@@ -78,6 +85,20 @@ public sealed class MergedListCache : IDisposable
             {
                 InvalidateLocked(userId, slot, rebuildDelay);
             }
+        }
+    }
+
+    /// <summary>
+    /// Items were added to or removed from the library. Current lists keep being served; active users'
+    /// lists are rebuilt in the background once the interval has passed. Removed items already drop out
+    /// of responses, since each request looks items up again.
+    /// </summary>
+    public void MarkLibraryChanged()
+    {
+        Interlocked.Increment(ref _libraryVersion);
+        if (Interlocked.CompareExchange(ref _libraryRebuildScheduled, 1, 0) == 0)
+        {
+            _ = RebuildForLibraryChangesAsync();
         }
     }
 
@@ -158,6 +179,7 @@ public sealed class MergedListCache : IDisposable
         }
 
         var generation = slot.Generation;
+        var libraryVersion = Volatile.Read(ref _libraryVersion);
         var completion = new TaskCompletionSource<MergedList>(TaskCreationOptions.RunContinuationsAsynchronously);
         slot.InFlight = completion.Task;
         slot.InFlightGeneration = generation;
@@ -175,6 +197,7 @@ public sealed class MergedListCache : IDisposable
                     {
                         slot.Current = list;
                         slot.CurrentGeneration = generation;
+                        slot.CurrentLibraryVersion = libraryVersion;
                     }
 
                     if (slot.InFlight == completion.Task)
@@ -231,18 +254,25 @@ public sealed class MergedListCache : IDisposable
             await _backgroundGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                Task<MergedList> build;
-                lock (slot.Gate)
+                // A second pass covers joining a build that started before the latest change.
+                for (var pass = 0; pass < 2; pass++)
                 {
-                    if (HasValidCurrent(slot) && IsFresh(slot.Current!, UtcNow + RefreshLookahead))
+                    cancellationToken.ThrowIfCancellationRequested();
+                    Task<MergedList> build;
+                    lock (slot.Gate)
                     {
-                        return;
+                        if (HasValidCurrent(slot)
+                            && IsFresh(slot.Current!, UtcNow + RefreshLookahead)
+                            && slot.CurrentLibraryVersion == Volatile.Read(ref _libraryVersion))
+                        {
+                            return;
+                        }
+
+                        build = GetOrStartBuildLocked(userId, slot);
                     }
 
-                    build = GetOrStartBuildLocked(userId, slot);
+                    await build.ConfigureAwait(false);
                 }
-
-                await build.ConfigureAwait(false);
             }
             finally
             {
@@ -261,6 +291,33 @@ public sealed class MergedListCache : IDisposable
         }
     }
 
+    private async Task RebuildForLibraryChangesAsync()
+    {
+        try
+        {
+            await Task.Delay(LibraryRebuildDelay, _timeProvider, _shutdown.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+            return;
+        }
+
+        // Changes from here on schedule the next round, which picks up anything this round misses.
+        Volatile.Write(ref _libraryRebuildScheduled, 0);
+
+        var libraryVersion = Volatile.Read(ref _libraryVersion);
+        foreach (var (userId, slot) in _slots)
+        {
+            lock (slot.Gate)
+            {
+                if (HasValidCurrent(slot) && slot.CurrentLibraryVersion != libraryVersion)
+                {
+                    ScheduleRebuildLocked(userId, slot, TimeSpan.Zero);
+                }
+            }
+        }
+    }
+
     private sealed class Slot
     {
         public readonly object Gate = new();
@@ -270,6 +327,8 @@ public sealed class MergedListCache : IDisposable
         public MergedList? Current;
 
         public long CurrentGeneration = -1;
+
+        public long CurrentLibraryVersion;
 
         public Task<MergedList>? InFlight;
 

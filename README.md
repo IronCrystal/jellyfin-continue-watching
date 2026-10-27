@@ -39,7 +39,7 @@ Copy `Jellyfin.Plugin.ContinueWatchingPlus.dll` (from a release zip, or `./build
 | Hide the separate Next Up list | off | Empties the separate Next Up row, which the web app then hides. Series pages still find the next episode. |
 | Only change responses for Infuse | off | Other clients get Jellyfin's normal lists. |
 
-Each user's own **Max days in Next Up** and **Enable rewatching in Next Up** are respected. The web app stores these in
+Each user's own **Max days in Next Up** and **Enable rewatching in Next Up** (Settings → Display) are respected. The web app stores these in
 the browser rather than on the server, so the plugin picks them up from the Next Up request the web app makes when
 that user opens the home page, and remembers them. Only apps built on the web app are trusted for this (the browser,
 Jellyfin Desktop, and Jellyfin for Android); native apps such as Android TV can send different values and are ignored.

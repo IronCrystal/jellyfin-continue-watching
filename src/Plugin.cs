@@ -1,41 +1,36 @@
 using System;
 using System.Collections.Generic;
-using Jellyfin.Plugin.ContinueWatchingTweaks.Configuration;
+using Jellyfin.Plugin.ContinueWatchingPlus.Configuration;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Plugins;
 using MediaBrowser.Model.Plugins;
 using MediaBrowser.Model.Serialization;
 
-namespace Jellyfin.Plugin.ContinueWatchingTweaks;
+namespace Jellyfin.Plugin.ContinueWatchingPlus;
 
-/// <summary>
-/// Plugin entry point. Jellyfin discovers this via MEF on startup.
-/// </summary>
 public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 {
-    public static Plugin? Instance { get; private set; }
-
     public Plugin(IApplicationPaths applicationPaths, IXmlSerializer xmlSerializer)
         : base(applicationPaths, xmlSerializer)
     {
         Instance = this;
     }
 
-    /// <inheritdoc />
-    public override string Name => "Continue Watching Tweaks";
+    public static Plugin? Instance { get; private set; }
 
-    /// <inheritdoc />
-    public override Guid Id => Guid.Parse("747ee9a0-1b72-42aa-8b62-d9135eb53438");
+    public override string Name => "Continue Watching Plus";
 
-    /// <inheritdoc />
+    public override Guid Id => Guid.Parse("7bd59628-0503-45cd-9926-5e9e6565de93");
+
     public override string Description =>
-        "Merges Continue Watching and Next Up into a single resumable list for Infuse (and other clients).";
+        "Merges Continue Watching and Next Up into one row, sorted by recent activity.";
 
     public IEnumerable<PluginPageInfo> GetPages()
     {
         yield return new PluginPageInfo
         {
-            Name                 = Name,
+            Name = Name,
             EmbeddedResourcePath = $"{GetType().Namespace}.Configuration.configPage.html",
         };
-    }}
+    }
+}

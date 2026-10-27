@@ -1,71 +1,92 @@
-# Jellyfin Continue Watching Tweaks Plugin
+# Continue Watching Plus for Jellyfin
 
-A Jellyfin plugin that merges **Continue Watching** and **Next Up** into a single list, along with a number of configuration options.
+One **Continue Watching** row, like Plex: items you're partway through plus the next episode of every show you're
+watching, merged and sorted by recent activity.
 
-Built on work from [italohdc/Jellyfin-NextUpMerge-Plugin.](https://github.com/italohdc/Jellyfin-NextUpMerge-Plugin).
+It changes the server's answer to the Continue Watching request (`/UserItems/Resume` and the older
+`/Users/{id}/Items/Resume`), so it works in the web app, the desktop app, and most other clients, including Infuse.
 
-## About this plugin
+A fork of [Continue Watching Tweaks](https://github.com/dyancat/jellyfin-continue-watching-tweaks) by dyancat
+(itself built on [italohdc/Jellyfin-NextUpMerge-Plugin](https://github.com/italohdc/Jellyfin-NextUpMerge-Plugin)).
+The merge rules are theirs; this fork adds login checks, an in-memory cache, and per-user Next Up settings.
 
-There's a reported issue on Infuse where the _Watching_ shelf will show TV Shows next episodes when using Plex, but not when using Jellyfin as a share. That happens because Plex returns a combined list of in-progress and next-up items from its API, while Jellyfin keeps them separate.
+## Compatibility
 
-This plugin creates a middleware on Jellyfin that merges the _Continue Watching_ and _Next Up_ on a single endpoint, so Infuse shows both in its top shelf.
+Jellyfin **12.3** or newer (built against 12.3.0). Uninstall Continue Watching Tweaks first; both change the same
+request.
 
-### More on the issue
+## Install
 
-This has been a known issue and requested feature on Firecore community:
+### From a plugin repository (recommended)
 
-- [Firecore Community - Jellyfin Merge Continue Watching and Up Next](https://community.firecore.com/t/jellyfin-merge-continue-watching-and-up-next/39898)
-- [Firecore Community - Infuse, PMS and Jellyfin: “continue watching” only for PMS?](https://community.firecore.com/t/infuse-pms-and-jellyfin-continue-watching-only-for-pms/59923)
+1. Dashboard → Plugins → Repositories → **+**
+2. Name: `Continue Watching Plus`, URL:
+   `https://raw.githubusercontent.com/IronCrystal/jellyfin-continue-watching/main/manifest.json`
+3. Install **Continue Watching Plus** from the catalog, then restart Jellyfin.
 
-As this new feature is not yet implemented on Jellyfin or Infuse, this plugin is a **temporary workaround** to get the same experience as on Plex. As it is a PoC, Claude was used to help develop it.
+### Manually
 
+Copy `Jellyfin.Plugin.ContinueWatchingPlus.dll` (from a release zip, or `./build.sh`) into
+`<jellyfin data>/plugins/ContinueWatchingPlus_1.0.0.0/` and restart Jellyfin.
 
-## How to use this plugin
+## What's in the row
 
-### Compatibility
+| Setting | Default | Effect |
+|---|---|---|
+| One entry per series | on | No Next Up episode for a show you're partway through another episode of. |
+| Only include series with a finished episode | on | A show you only opened briefly doesn't appear. |
+| Promote recently added episodes | on | A newly added next episode moves its show to the front. |
+| Hide the separate Next Up list | off | Empties the separate Next Up row. Series pages still find the next episode. |
+| Only change responses for Infuse | off | Other clients get Jellyfin's normal lists. |
 
-- **Jellyfin 12**
+Each user's own **Max days in Next Up** and **Enable rewatching in Next Up** are respected. The web app stores these in
+the browser rather than on the server, so the plugin picks them up from the web app's own Next Up request the next
+time that user opens the home page, and remembers them. Users who never use the web app get the defaults on the
+plugin's settings page (365 days, rewatching off, the same as the web app).
 
-### Option 1: Install in Jellyfin admin dashboard
+Requests the plugin leaves to Jellyfin: Continue Listening/Reading (`mediaTypes` without Video), library-scoped
+(`parentId`) and search (`searchTerm`) queries.
 
-1. Navigate to your Jellyfin admin dashboard
-2. Open the Plugins page
-3. Click "Manage Repositories" then "+ New Repository"
-4. Enter the following:
-  * Name: `Continue Watching`
-  * URL: `https://raw.githubusercontent.com/dyancat/jellyfin-continue-watching-tweaks/refs/heads/main/manifest.json`
-5. Go back to Plugins and filter to "All" or "Available"
-6. Find and install the "Continue Watching Tweaks" plugin
-7. Restart Jellyfin.
-8. It should be configured to work by default, otherwise you can open the plugin settings and configure it as needed.
+## Security
 
-### Option 2: Install from pre-built releases
+The plugin runs inside Jellyfin's own request pipeline, on Jellyfin's own endpoints, after Jellyfin's login check:
 
-The compiled plugin files are available on the [releases page](https://github.com/dyancat/jellyfin-continue-watching-tweaks/releases). You need to download the latest release and extract its content into Jellyfin plugins folder.
+- No valid login → **401**, from Jellyfin itself.
+- A user asking for another user's list → **403**, the same check and response as Jellyfin's built-in endpoint.
+  Administrators may read any user's list, as with Jellyfin.
 
-In the end, for it to work, there must be a `.dll` file as in:
-`plugins/ContinueWatchingTweaks_1.0.0.0/Jellyfin.Plugin.ContinueWatchingTweaks.dll`.
+## Speed
 
-### Option 3: Build from source
+Each user's merged list (item IDs and order only) is kept in memory. Images, fields, and progress bars are filled in
+fresh on every request.
 
-#### Build `.dll` files from source
+- **Cleared when something changes:** that user's playback starts or stops, an item is marked played or unplayed,
+  videos are added to or removed from the library, the user's account or this plugin's settings change, or the web
+  app reports different Next Up settings.
+- **Rebuilt in the background** right after a change (after 10 s for library scans, which add items in bursts), so the
+  home page usually gets an answer from memory. A request that arrives before the rebuild finishes computes the list
+  itself; it never gets the old one.
+- **Safety net:** lists are rebuilt at least every 5 minutes (configurable) and at midnight UTC, when the Next Up
+  date cutoff moves. Users who loaded the row in the last 24 hours are refreshed ahead of time, so they keep getting
+  answers from memory.
 
-To build this plugin, you need [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) installed. The `build.sh` script will compile the plugin files into `dist/` folder.
+Trade-off: the first load after a Jellyfin restart computes the list (about as fast as Jellyfin's own Next Up), and
+changes Jellyfin doesn't announce, such as which libraries a user may see, show up within the safety-net interval.
+
+## Build
+
+Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
 
 ```sh
-# Install .NET 10 SDK
-## macOS (Homebrew):
-brew install --cask dotnet-sdk10
-
-# Build plugin .dll files
 ./build.sh
 ```
 
-#### Add plugin to Jellyfin
+Runs the tests and writes `dist/Jellyfin.Plugin.ContinueWatchingPlus.dll`.
 
-In your Jellyfin config directory, create a new folder `ContinueWatchingTweaks_1.0.0.0` and copy the content of `dist/` into it.
+## Publishing a release
 
-In the end, for it to work, there must be a `.dll` file as in:
-`plugins/ContinueWatchingTweaks_1.0.0.0/Jellyfin.Plugin.ContinueWatchingTweaks.dll`.
+1. Push this repository to GitHub.
+2. Tag and push: `git tag v1.0.0 && git push origin v1.0.0`.
 
-Jellyfin must be restarted after copying the plugin files for it to be loaded.
+The release workflow runs the tests, builds the plugin, attaches the zip to a GitHub release, and adds the version
+(with its checksum) to `manifest.json` on `main`, which is what Jellyfin's plugin catalog reads.

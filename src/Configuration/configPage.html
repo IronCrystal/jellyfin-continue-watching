@@ -2,14 +2,14 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>Continue Watching Tweaks</title>
+    <title>Continue Watching Plus</title>
 </head>
 <body>
-<div id="ContinueWatchingTweaksConfigPage" data-role="page" class="page type-interior pluginConfigurationPage"
+<div id="ContinueWatchingPlusConfigPage" data-role="page" class="page type-interior pluginConfigurationPage"
      data-require="emby-input,emby-button,emby-checkbox">
     <div data-role="content">
         <div class="content-primary">
-            <form id="ContinueWatchingTweaksConfigForm">
+            <form id="ContinueWatchingPlusConfigForm">
                 <fieldset class="verticalSection">
                     <legend><h3 class="sectionTitle">General</h3></legend>
 
@@ -71,6 +71,28 @@
                 </fieldset>
 
                 <fieldset class="verticalSection">
+                    <legend><h3 class="sectionTitle">Next Up settings</h3></legend>
+                    <p class="fieldDescription">
+                        Each user's own "Max days in Next Up" and "Enable rewatching in Next Up" (set in the web app under
+                        Settings &gt; Home) are picked up the next time they open the home page in the web app. These defaults
+                        apply to users who haven't done that yet, for example users who only use Infuse.
+                    </p>
+
+                    <div class="inputContainer">
+                        <input id="DefaultMaxDaysInNextUp" type="number" is="emby-input" min="0" max="36500" step="1"
+                               label="Default max days in Next Up" />
+                        <div class="fieldDescription">Same default as the web app: 365.</div>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="DefaultEnableRewatching" type="checkbox" is="emby-checkbox" />
+                            <span>Default: enable rewatching in Next Up</span>
+                        </label>
+                    </div>
+                </fieldset>
+
+                <fieldset class="verticalSection">
                     <legend><h3 class="sectionTitle">Separate Next Up list</h3></legend>
 
                     <div class="checkboxContainer checkboxContainer-withDescription">
@@ -79,9 +101,21 @@
                             <span>Hide the separate Next Up list</span>
                         </label>
                         <div class="fieldDescription checkboxFieldDescription">
-                            Returns an empty list for Jellyfin's Next Up request, since those episodes now appear in Continue Watching.
-                            Applies to every client, or only to Infuse if the option above is on.
-                            Clients that use this request to find the next episode to play may stop doing so.
+                            Returns an empty Next Up list, since those episodes now appear in Continue Watching.
+                            The next-episode lookup on a series page keeps working.
+                        </div>
+                    </div>
+                </fieldset>
+
+                <fieldset class="verticalSection">
+                    <legend><h3 class="sectionTitle">Cache</h3></legend>
+
+                    <div class="inputContainer">
+                        <input id="CacheMinutes" type="number" is="emby-input" min="1" max="1440" step="1"
+                               label="Rebuild the list at least every (minutes)" />
+                        <div class="fieldDescription">
+                            The list is rebuilt immediately when watch progress or the library changes. This is a safety net for
+                            anything that doesn't raise an event, such as changing which libraries a user can see.
                         </div>
                     </div>
                 </fieldset>
@@ -96,32 +130,27 @@
 
     <script type="text/javascript">
         (function () {
-            var pluginId = '747ee9a0-1b72-42aa-8b62-d9135eb53438';
-            var page = document.querySelector('#ContinueWatchingTweaksConfigPage');
+            var pluginId = '7bd59628-0503-45cd-9926-5e9e6565de93';
+            var page = document.querySelector('#ContinueWatchingPlusConfigPage');
+            var checkboxes = ['Enabled', 'ApplyToInfuseOnly', 'BlockNextUpEndpoint', 'HideNextUpForSeriesInProgress',
+                'SortNextUpByEpisodeAddedDate', 'RequireFinishedEpisodeForNextUp', 'DefaultEnableRewatching'];
+            var numbers = ['DefaultMaxDaysInNextUp', 'CacheMinutes'];
 
             page.addEventListener('pageshow', function () {
                 Dashboard.showLoadingMsg();
                 ApiClient.getPluginConfiguration(pluginId).then(function (config) {
-                    page.querySelector('#Enabled').checked = config.Enabled;
-                    page.querySelector('#ApplyToInfuseOnly').checked = config.ApplyToInfuseOnly;
-                    page.querySelector('#BlockNextUpEndpoint').checked = config.BlockNextUpEndpoint;
-                    page.querySelector('#HideNextUpForSeriesInProgress').checked = config.HideNextUpForSeriesInProgress;
-                    page.querySelector('#SortNextUpByEpisodeAddedDate').checked = config.SortNextUpByEpisodeAddedDate;
-                    page.querySelector('#RequireFinishedEpisodeForNextUp').checked = config.RequireFinishedEpisodeForNextUp;
+                    checkboxes.forEach(function (key) { page.querySelector('#' + key).checked = config[key]; });
+                    numbers.forEach(function (key) { page.querySelector('#' + key).value = config[key]; });
                     Dashboard.hideLoadingMsg();
                 });
             });
 
-            page.querySelector('#ContinueWatchingTweaksConfigForm').addEventListener('submit', function (event) {
+            page.querySelector('#ContinueWatchingPlusConfigForm').addEventListener('submit', function (event) {
                 event.preventDefault();
                 Dashboard.showLoadingMsg();
                 ApiClient.getPluginConfiguration(pluginId).then(function (config) {
-                    config.Enabled = page.querySelector('#Enabled').checked;
-                    config.ApplyToInfuseOnly = page.querySelector('#ApplyToInfuseOnly').checked;
-                    config.BlockNextUpEndpoint = page.querySelector('#BlockNextUpEndpoint').checked;
-                    config.HideNextUpForSeriesInProgress = page.querySelector('#HideNextUpForSeriesInProgress').checked;
-                    config.SortNextUpByEpisodeAddedDate = page.querySelector('#SortNextUpByEpisodeAddedDate').checked;
-                    config.RequireFinishedEpisodeForNextUp = page.querySelector('#RequireFinishedEpisodeForNextUp').checked;
+                    checkboxes.forEach(function (key) { config[key] = page.querySelector('#' + key).checked; });
+                    numbers.forEach(function (key) { config[key] = parseInt(page.querySelector('#' + key).value, 10) || 0; });
                     ApiClient.updatePluginConfiguration(pluginId, config)
                         .then(Dashboard.processPluginConfigurationUpdateResult);
                 });

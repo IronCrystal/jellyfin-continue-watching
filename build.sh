@@ -1,42 +1,14 @@
 #!/usr/bin/env bash
-# ─────────────────────────────────────────────────────────────────────────────
-# build.sh – Build the ContinueWatchingTweaks Jellyfin plugin
-#
-# Requirements:
-#   • .NET 8 SDK  (https://dotnet.microsoft.com/download)
-#
-# Usage:
-#   chmod +x build.sh
-#   ./build.sh
-#
-# Output:
-#   dist/Jellyfin.Plugin.ContinueWatchingTweaks.dll   ← copy this into Jellyfin's plugins folder
-# ─────────────────────────────────────────────────────────────────────────────
+# Builds and tests the plugin. Requires the .NET 10 SDK.
+# Output: dist/Jellyfin.Plugin.ContinueWatchingPlus.dll
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SRC_DIR="$SCRIPT_DIR/src"
-OUT_DIR="$SCRIPT_DIR/dist"
+cd "$(dirname "${BASH_SOURCE[0]}")"
 
-echo "==> Cleaning previous build..."
-rm -rf "$OUT_DIR"
-mkdir -p "$OUT_DIR"
+rm -rf dist
+dotnet test --project tests/Jellyfin.Plugin.ContinueWatchingPlus.Tests.csproj
+dotnet publish src/Jellyfin.Plugin.ContinueWatchingPlus.csproj --configuration Release --output dist
 
-echo "==> Restoring NuGet packages..."
-dotnet restore "$SRC_DIR/Jellyfin.Plugin.ContinueWatchingTweaks.csproj"
-
-echo "==> Building plugin (Release)..."
-dotnet publish "$SRC_DIR/Jellyfin.Plugin.ContinueWatchingTweaks.csproj" \
-    --configuration Release \
-    --output "$OUT_DIR" \
-    --no-restore
-
-echo ""
-echo "✅  Build complete!"
-echo ""
-echo "Install the plugin:"
-echo "  1. Copy  dist/Jellyfin.Plugin.ContinueWatchingTweaks.dll"
-echo "     into   <jellyfin-config>/plugins/ContinueWatchingTweaks_1.0.0.0/"
-echo "  2. Restart Jellyfin"
-echo "  3. Infuse (and other clients) will now get merged Continue Watching + Next Up"
-echo ""
+echo
+echo "Built dist/Jellyfin.Plugin.ContinueWatchingPlus.dll"
+echo "Copy it to <jellyfin data>/plugins/ContinueWatchingPlus_1.0.0.0/ and restart Jellyfin."

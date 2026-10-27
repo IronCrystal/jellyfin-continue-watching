@@ -1,20 +1,30 @@
-using Jellyfin.Plugin.ContinueWatchingTweaks.Api;
+using System;
+using Jellyfin.Plugin.ContinueWatchingPlus.Api;
+using Jellyfin.Plugin.ContinueWatchingPlus.Caching;
+using Jellyfin.Plugin.ContinueWatchingPlus.Merging;
+using Jellyfin.Plugin.ContinueWatchingPlus.Preferences;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Plugins;
-using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
-namespace Jellyfin.Plugin.ContinueWatchingTweaks;
+namespace Jellyfin.Plugin.ContinueWatchingPlus;
 
-/// <summary>
-/// Registers plugin services with Jellyfin's DI container.
-/// Jellyfin scans for IPluginServiceRegistrator on startup.
-/// </summary>
 public class PluginServiceRegistrator : IPluginServiceRegistrator
 {
-    /// <inheritdoc />
     public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
     {
-        serviceCollection.AddTransient<IStartupFilter, ResumeStartupFilter>();
+        serviceCollection.AddSingleton<NextUpPreferenceStore>();
+        serviceCollection.AddSingleton<MergedListBuilder>();
+        serviceCollection.AddSingleton(serviceProvider => new MergedListCache(
+            serviceProvider.GetRequiredService<MergedListBuilder>().Build,
+            () => TimeSpan.FromMinutes(Math.Max(1, Plugin.Instance?.Configuration.CacheMinutes ?? 5)),
+            TimeProvider.System,
+            serviceProvider.GetRequiredService<ILogger<MergedListCache>>()));
+        serviceCollection.AddSingleton<ContinueWatchingActionFilter>();
+        serviceCollection.AddHostedService<CacheInvalidationService>();
+
+        serviceCollection.Configure<MvcOptions>(options => options.Filters.AddService<ContinueWatchingActionFilter>());
     }
 }

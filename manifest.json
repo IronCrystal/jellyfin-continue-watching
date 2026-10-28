@@ -6,6 +6,15 @@
     "overview": "One Continue Watching row with in-progress items and next episodes",
     "owner": "IronCrystal",
     "category": "General",
-    "versions": []
+    "versions": [
+      {
+        "version": "1.0.0.0",
+        "changelog": "See the GitHub release notes.",
+        "targetAbi": "12.3.0.0",
+        "sourceUrl": "https://github.com/IronCrystal/jellyfin-continue-watching/releases/download/v1.0.0/Jellyfin.Plugin.ContinueWatchingPlus_1.0.0.0.zip",
+        "checksum": "CBCECF1560C390BC1E6F70F48BB0037C",
+        "timestamp": "2026-10-28T00:37:19Z"
+      }
+    ]
   }
 ]

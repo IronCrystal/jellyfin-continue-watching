@@ -36,9 +36,16 @@ public sealed class ContinueWatchingActionFilter : IAsyncActionFilter
     private const string ClientClaimType = "Jellyfin-Client";
     private const string AdministratorRole = "Administrator";
 
-    // Apps that run jellyfin-web, whose Next Up request carries the user's own web settings.
-    // Native apps (Android TV, Swiftfin, ...) may send cutoffs of their own and must not overwrite them.
-    private static readonly string[] _webClientNames = { "Jellyfin Web", "Jellyfin Desktop", "Jellyfin for Android" };
+    // Apps that run jellyfin-web, whose Next Up request carries the user's own web settings. Jellyfin Media
+    // Player is the desktop app up to 1.x; it reports "Jellyfin Desktop" from 2.0. Native apps (Android TV,
+    // Swiftfin, ...) may send cutoffs of their own and must not overwrite them.
+    private static readonly string[] _webClientNames =
+    {
+        "Jellyfin Web",
+        "Jellyfin Media Player",
+        "Jellyfin Desktop",
+        "Jellyfin for Android",
+    };
 
     private readonly MergedListCache _cache;
     private readonly NextUpPreferenceStore _nextUpPreferences;

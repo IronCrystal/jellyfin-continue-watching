@@ -126,10 +126,14 @@ public sealed class ContinueWatchingActionFilterTests : IDisposable
         Assert.False(_nextCalled);
     }
 
-    [Fact]
-    public async Task NextUpSettings_AreLearnedFromTheWebApp()
+    [Theory]
+    [InlineData("Jellyfin Web")]
+    [InlineData("Jellyfin Media Player")]
+    [InlineData("Jellyfin Desktop")]
+    [InlineData("Jellyfin for Android")]
+    public async Task NextUpSettings_AreLearnedFromAppsThatRunTheWebApp(string client)
     {
-        await RunAsync("TvShows", "GetNextUp", Principal(_alice, "Jellyfin Web"), new()
+        await RunAsync("TvShows", "GetNextUp", Principal(_alice, client), new()
         {
             ["nextUpDateCutoff"] = DateTime.UtcNow.Date.AddDays(-30),
             ["enableRewatching"] = true,

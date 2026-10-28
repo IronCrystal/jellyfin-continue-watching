@@ -42,7 +42,7 @@ Copy `Jellyfin.Plugin.ContinueWatchingPlus.dll` (from a release zip, or `./build
 Each user's own **Max days in Next Up** and **Enable rewatching in Next Up** (Settings → Display) are respected. The web app stores these in
 the browser rather than on the server, so the plugin picks them up from the Next Up request the web app makes when
 that user opens the home page, and remembers them. Only apps built on the web app are trusted for this (the browser,
-Jellyfin Desktop, and Jellyfin for Android); native apps such as Android TV can send different values and are ignored.
+Jellyfin Media Player / Jellyfin Desktop, and Jellyfin for Android); native apps such as Android TV can send different values and are ignored.
 If a user has different settings in two of those apps, the one they opened most recently wins. Users who never use
 them get the defaults on the plugin's settings page (365 days, rewatching off, the same as the web app).
 

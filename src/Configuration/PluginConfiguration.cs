@@ -10,7 +10,7 @@ public class PluginConfiguration : BasePluginConfiguration
 
     public bool BlockNextUpEndpoint { get; set; }
 
-    public bool HideNextUpForSeriesInProgress { get; set; } = true;
+    public bool OneEntryPerSeries { get; set; } = true;
 
     public bool SortNextUpByEpisodeAddedDate { get; set; } = true;
 

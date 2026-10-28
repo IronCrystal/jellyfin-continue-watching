@@ -33,7 +33,7 @@ Copy `Jellyfin.Plugin.ContinueWatchingPlus.dll` (from a release zip, or `./build
 
 | Setting | Default | Effect |
 |---|---|---|
-| One entry per series | on | No Next Up episode for a show you're partway through another episode of. |
+| One entry per series | on | Like Plex: each show appears once, as whatever you did last — the episode you're partway through if you played it most recently, otherwise the next episode after the one you last finished. |
 | Only include series with a finished episode | on | A show you only opened briefly doesn't appear. |
 | Promote recently added episodes | on | A newly added next episode moves its show to the front. |
 | Hide the separate Next Up list | off | Empties the separate Next Up row, which the web app then hides. Series pages still find the next episode. |

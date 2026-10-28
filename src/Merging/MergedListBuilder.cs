@@ -74,17 +74,7 @@ public sealed class MergedListBuilder
                 dtoOptions)
             .Items;
 
-        var seriesIdsInContinueWatching = continueWatchingItems
-            .OfType<Episode>()
-            .Select(episode => episode.SeriesId)
-            .Where(seriesId => !seriesId.Equals(Guid.Empty))
-            .ToHashSet();
-
-        var nextUpEpisodes = nextUpItems
-            .OfType<Episode>()
-            .Where(episode => !configuration.HideNextUpForSeriesInProgress
-                              || !seriesIdsInContinueWatching.Contains(episode.SeriesId))
-            .ToList();
+        var nextUpEpisodes = nextUpItems.OfType<Episode>().ToList();
 
         var lastWatchedByNextUpEpisodeId = GetLastWatchedEpisodes(user, nextUpEpisodes, nextUpPreferences.EnableRewatching, dtoOptions);
 
@@ -105,23 +95,42 @@ public sealed class MergedListBuilder
         DateTime GetLastPlayedDate(BaseItem item)
             => userDataByItemId.GetValueOrDefault(item.Id)?.LastPlayedDate ?? DateTime.MinValue;
 
-        // Next Up items sort by the later of: when the series' last finished episode was played,
-        // or (optionally) when the episode was added.
-        DateTime GetNextUpSortDate(Episode episode)
-        {
-            var seriesLastPlayedDate = lastWatchedByNextUpEpisodeId.TryGetValue(episode.Id, out var lastWatched)
+        // When the episode a Next Up entry continues from was last played.
+        DateTime GetSeriesLastPlayedDate(Episode episode)
+            => lastWatchedByNextUpEpisodeId.TryGetValue(episode.Id, out var lastWatched)
                 ? GetVersions(lastWatched).Select(GetLastPlayedDate).DefaultIfEmpty(DateTime.MinValue).Max()
                 : DateTime.MinValue;
 
-            return configuration.SortNextUpByEpisodeAddedDate && episode.DateCreated > seriesLastPlayedDate
+        // Next Up items sort by the later of: when the series' last finished episode was played,
+        // or (optionally) when the episode was added.
+        DateTime GetNextUpSortDate(Episode episode, DateTime seriesLastPlayedDate)
+            => configuration.SortNextUpByEpisodeAddedDate && episode.DateCreated > seriesLastPlayedDate
                 ? episode.DateCreated
                 : seriesLastPlayedDate;
-        }
 
-        var entries = continueWatchingItems
-            .Select(item => new MergedEntry(item.Id, item.GetBaseItemKind(), false, GetLastPlayedDate(item)))
-            .Concat(nextUpEpisodes.Select(episode => new MergedEntry(episode.Id, episode.GetBaseItemKind(), true, GetNextUpSortDate(episode))))
-            .DistinctBy(entry => entry.ItemId)
+        var candidates = continueWatchingItems
+            .Select(item =>
+            {
+                var lastPlayedDate = GetLastPlayedDate(item);
+                return new Candidate(
+                    new MergedEntry(item.Id, item.GetBaseItemKind(), false, lastPlayedDate),
+                    (item as Episode)?.SeriesId ?? Guid.Empty,
+                    lastPlayedDate);
+            })
+            .Concat(nextUpEpisodes.Select(episode =>
+            {
+                var seriesLastPlayedDate = GetSeriesLastPlayedDate(episode);
+                return new Candidate(
+                    new MergedEntry(episode.Id, episode.GetBaseItemKind(), true, GetNextUpSortDate(episode, seriesLastPlayedDate)),
+                    episode.SeriesId,
+                    seriesLastPlayedDate);
+            }))
+            .DistinctBy(candidate => candidate.Entry.ItemId)
+            .ToList();
+
+        var entries = (configuration.OneEntryPerSeries
+                ? KeepLatestActivityPerSeries(candidates)
+                : candidates.Select(candidate => candidate.Entry))
             .OrderByDescending(entry => entry.SortDate)
             .Take(MaxItems)
             .ToList();
@@ -135,6 +144,20 @@ public sealed class MergedListBuilder
 
         return new MergedList(entries, builtAtUtc);
     }
+
+    /// <summary>
+    /// Like Plex: per series, only what you did last. A partly watched episode if you played it most
+    /// recently, otherwise the episode after the one you last finished. Ties go to the partly watched one.
+    /// Movies and other items without a series are kept as they are.
+    /// </summary>
+    internal static IEnumerable<MergedEntry> KeepLatestActivityPerSeries(IEnumerable<Candidate> candidates)
+        => candidates
+            .GroupBy(candidate => candidate.SeriesId.Equals(Guid.Empty) ? candidate.Entry.ItemId : candidate.SeriesId)
+            .Select(series => series
+                .OrderByDescending(candidate => candidate.ActivityDate)
+                .ThenBy(candidate => candidate.Entry.IsNextUp)
+                .First()
+                .Entry);
 
     // Mirrors the query behind Jellyfin's own /UserItems/Resume, limited to video.
     private List<BaseItem> GetContinueWatchingItems(User user, DtoOptions dtoOptions)
@@ -208,4 +231,7 @@ public sealed class MergedListBuilder
 
     private static IEnumerable<BaseItem> GetVersions(BaseItem item)
         => item is Video video ? video.GetAllVersions() : new[] { item };
+
+    /// <param name="ActivityDate">When the user last played this item, or for Next Up, the episode it follows.</param>
+    internal sealed record Candidate(MergedEntry Entry, Guid SeriesId, DateTime ActivityDate);
 }

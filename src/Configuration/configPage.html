@@ -39,11 +39,13 @@
 
                     <div class="checkboxContainer checkboxContainer-withDescription">
                         <label class="emby-checkbox-label">
-                            <input id="HideNextUpForSeriesInProgress" type="checkbox" is="emby-checkbox" />
+                            <input id="OneEntryPerSeries" type="checkbox" is="emby-checkbox" />
                             <span>One entry per series</span>
                         </label>
                         <div class="fieldDescription checkboxFieldDescription">
-                            Don't add a Next Up episode for a series that already has an episode in progress.
+                            Like Plex: each show appears once, as whatever you did last. The episode you're partway through if you
+                            played it most recently, otherwise the next episode after the one you last finished. Older partly
+                            watched episodes of that show are left out.
                         </div>
                     </div>
 
@@ -134,7 +136,7 @@
         (function () {
             var pluginId = '7bd59628-0503-45cd-9926-5e9e6565de93';
             var page = document.querySelector('#ContinueWatchingPlusConfigPage');
-            var checkboxes = ['Enabled', 'ApplyToInfuseOnly', 'BlockNextUpEndpoint', 'HideNextUpForSeriesInProgress',
+            var checkboxes = ['Enabled', 'ApplyToInfuseOnly', 'BlockNextUpEndpoint', 'OneEntryPerSeries',
                 'SortNextUpByEpisodeAddedDate', 'RequireFinishedEpisodeForNextUp', 'DefaultEnableRewatching'];
             var numbers = ['DefaultMaxDaysInNextUp', 'CacheMinutes'];
 
